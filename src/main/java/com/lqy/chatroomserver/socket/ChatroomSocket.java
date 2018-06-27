@@ -1,8 +1,7 @@
 package com.lqy.chatroomserver.socket;
 
 import com.google.gson.Gson;
-import com.lqy.chatroomserver.bean.Client;
-import com.lqy.chatroomserver.bean.Message;
+import com.lqy.chatroomserver.bean.MyMessage;
 import com.lqy.chatroomserver.bean.User;
 
 import java.io.BufferedReader;
@@ -38,6 +37,7 @@ public class ChatroomSocket {
      * 已连接的client
      */
     private List<Socket> mSocketList;
+    private List<User> mUserList;
     /**
      * 将Client和PrintWriter保存为键值对，免得每次发消息都要重新获得PrintWriter
      */
@@ -56,6 +56,7 @@ public class ChatroomSocket {
     public ChatroomSocket(int port) {
         this.mPort = port;
         mSocketList = new ArrayList<>();
+        mUserList=new ArrayList<>();
         mClientPrintWriterMap = new HashMap<>();
         mExecutor = Executors.newCachedThreadPool();
     }
@@ -81,24 +82,30 @@ public class ChatroomSocket {
     }
 
     class ServiceRunnable implements Runnable {
-        private Client mClient;
+        private Socket mSocket;
+        private User mUser;
         private BufferedReader mReader;
+        private PrintWriter mWriter;
         private String mMessage;
         private StringBuilder mSb;
 
         public ServiceRunnable(Socket socket) throws Exception {
-            mReader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
+            mSocket=socket;
+            mReader = new BufferedReader(new InputStreamReader(mSocket.getInputStream(), "UTF-8"));
             //先等client将自己的用户信息发过来
             if ((mMessage = mReader.readLine()) != null) {
-                User user = mGson.fromJson(mMessage, User.class);
-                mClient = new Client(user.getId(), user.getUsername(), socket);
+                mUser = mGson.fromJson(mMessage, User.class);
 
-                mSocketList.add(socket);
-                mClientPrintWriterMap.put(socket,
-                        new PrintWriter(new OutputStreamWriter(mClient.socket.getOutputStream()), true));
+                mSocketList.add(mSocket);
+                mUserList.add(mUser);
+                mWriter=new PrintWriter(new OutputStreamWriter(mSocket.getOutputStream(), "UTF-8"), true);
+                mClientPrintWriterMap.put(socket, mWriter);
+
+                //将在线用户发给client
+                mWriter.println(mGson.toJson(mUserList));
 
                 //发送该用户进入聊天室的消息
-                sendMessage(new Message(Message.TYPE_ARRVIDE, mClient, null).toString());
+                sendMessage(new MyMessage(MyMessage.TYPE_ARRVIDE, mUser, null).toString());
             }
         }
 
@@ -106,25 +113,25 @@ public class ChatroomSocket {
         public void run() {
             try {
                 while (true) {
-                    if (!mClient.socket.isClosed()) {
-                        if (mClient.socket.isConnected()) {
+                    if (!mSocket.isClosed()) {
+                        if (mSocket.isConnected()) {
                             if ((mMessage = mReader.readLine()) != null) {
-                                if (mSb == null) {
-                                    mSb = new StringBuilder();
-                                }
-                                if (mMessage.endsWith(FLAG_END)) {
-                                    mSb.append(mMessage, 0, mMessage.length() - 5);
-                                    mMessage = mSb.toString();
-                                    mSb = null;
-
-                                    if (FLAG_EXIT.equals(mMessage)) {
-                                        stopService();
-                                        break;
-                                    } else {
-                                        sendMessage(mMessage);
+                                if (FLAG_EXIT.equals(mMessage)) {
+                                    System.out.println("exit");
+                                    break;
+                                }else {
+                                    if (mSb == null) {
+                                        mSb = new StringBuilder();
                                     }
-                                } else {
-                                    mSb.append(mMessage + "\n");
+                                    if (mMessage.endsWith(FLAG_END)) {
+                                        mSb.append(mMessage, 0, mMessage.length() - 5);
+                                        mMessage = mSb.toString();
+                                        mSb = null;
+
+                                        sendMessage(mMessage);
+                                    } else {
+                                        mSb.append(mMessage + "\n");
+                                    }
                                 }
                             }
                         }
@@ -142,12 +149,13 @@ public class ChatroomSocket {
         }
 
         private void stopService() throws IOException {
-            mSocketList.remove(mClient.socket);
             mReader.close();
-            mClientPrintWriterMap.get(mClient.socket).close();
-            mClientPrintWriterMap.remove(mClient.socket);
-            mMessage = new Message(Message.TYPE_EXIT, mClient, null).toString();
-            mClient.socket.close();
+            mWriter.close();
+            mClientPrintWriterMap.remove(mSocket);
+            mMessage = new MyMessage(MyMessage.TYPE_EXIT, mUser, null).toString();
+            mSocket.close();
+            mUserList.remove(mUser);
+            mSocketList.remove(mSocket);
             sendMessage(mMessage);
         }
     }

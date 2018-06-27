@@ -11,7 +11,7 @@ import com.google.gson.Gson;
  * @see
  * @since
  */
-public class Message {
+public class MyMessage {
     public static final int TYPE_MSG = 703;
     public static final int TYPE_ARRVIDE = 808;
     public static final int TYPE_EXIT = 275;
@@ -21,14 +21,14 @@ public class Message {
     private String content;
     private static final Gson GSON=new Gson();
 
-    public Message() {
+    public MyMessage() {
     }
 
-    public Message(int type, Client client, String content) {
-        this(type, client.userId, client.username, content);
+    public MyMessage(int type, User user, String content) {
+        this(type, user.getId(), user.getUsername(), content);
     }
 
-    public Message(int type, int userId, String username, String content) {
+    public MyMessage(int type, int userId, String username, String content) {
         this.type = type;
         this.userId = userId;
         this.username = username;
